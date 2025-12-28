@@ -1,0 +1,178 @@
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    restart: unless-stopped
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
+
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
+
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    restart: unless-stopped
+
+  kafka-init:
+    image: confluentinc/cp-kafka:7.6.0
+    depends_on:
+      - kafka
+    entrypoint: ["/bin/bash", "-lc"]
+    command:
+      - |
+        set -euo pipefail
+
+        echo 'Waiting for Kafka...'
+        cub kafka-ready -b kafka:9092 1 60
+        sleep 2
+
+        # Partitions
+        RAG_PARTS=64
+        DLQ_PARTS=6
+        RF=1
+
+        # Retentions
+        RETENTION_REQUEST_MS=172800000     # 2 days
+        RETENTION_RESPONSE_MS=21600000    # 6 hours
+        RETENTION_DLQ_MS=86400000         # 24 hours
+
+        # Segment settings)
+        SEGMENT_BYTES=268435456           # 256MB
+        SEGMENT_MS=3600000                # 1 hour
+
+        ensure_topic () {
+          local topic="$$1"
+          local parts="$$2"
+          local rf="$$3"
+          local retention_ms="$$4"
+
+          echo "Ensuring topic=$$topic partitions=$$parts rf=$$rf retention.ms=$$retention_ms"
+
+          kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists \
+            --topic "$$topic" \
+            --partitions "$$parts" \
+            --replication-factor "$$rf" \
+            --config "cleanup.policy=delete" \
+            --config "retention.ms=$$retention_ms" \
+            --config "segment.bytes=$$SEGMENT_BYTES" \
+            --config "segment.ms=$$SEGMENT_MS" || true
+
+          local current=""
+          current="$$(kafka-topics --bootstrap-server kafka:9092 --describe --topic "$$topic" 2>/dev/null \
+            | awk -F'PartitionCount: ' 'NR==1{print $$2}' | awk '{print $$1}')"
+
+          if [[ -n "$${current:-}" ]] && (( current < parts )); then
+            echo "Altering $$topic partitions: $$current -> $$parts"
+            kafka-topics --bootstrap-server kafka:9092 --alter --topic "$$topic" --partitions "$$parts"
+          fi
+
+          kafka-configs --bootstrap-server kafka:9092 --entity-type topics --entity-name "$$topic" --alter \
+            --add-config "cleanup.policy=delete,retention.ms=$$retention_ms,segment.bytes=$$SEGMENT_BYTES,segment.ms=$$SEGMENT_MS"
+        }
+
+        ensure_topic "rag_requests"      "$$RAG_PARTS"  "$$RF" "$$RETENTION_REQUEST_MS"
+        ensure_topic "rag_responses"     "$$RAG_PARTS"  "$$RF" "$$RETENTION_RESPONSE_MS"
+        ensure_topic "rag_requests_dlq"  "$$DLQ_PARTS"  "$$RF" "$$RETENTION_DLQ_MS"
+
+        echo "Kafka topics ensured + retention configured."
+    restart: on-failure
+
+  mongo:
+    image: mongo:7
+    container_name: mongo
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.3
+    container_name: qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  api:
+    build: .
+    env_file:
+      - .env
+    depends_on:
+      - kafka-init
+      - mongo
+      - qdrant
+      - redis
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONPATH=/app
+    command: >
+      sh -c "sleep 60 &&
+      gunicorn app.main:create_app
+      -k uvicorn.workers.UvicornWorker
+      --bind 0.0.0.0:8000
+      --workers 1
+      --threads 1
+      --timeout 180
+      --graceful-timeout 30"
+    restart: unless-stopped
+    volumes:
+      - .:/app
+
+  rag-worker:
+    build: .
+    env_file:
+      - .env
+    depends_on:
+      - kafka-init
+      - mongo
+      - qdrant
+      - redis
+    environment:
+      - PYTHONPATH=/app
+    command: sh -c "sleep 60 && python -m app.workers.rag_worker"
+    restart: unless-stopped
+    volumes:
+      - .:/app
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  mongo_data:
+  qdrant_data:
+  redis_data:
