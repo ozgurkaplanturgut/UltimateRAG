@@ -168,8 +168,7 @@ docker compose ps
 Example: **Ulysses (Project Gutenberg)**
 
 ```bash
-curl -X POST \
-  "http://localhost:8000/rag/documents/ulysses/upload?source_url=https%3A%2F%2Fwww.gutenberg.org%2Fcache%2Fepub%2F4300%2Fpg4300.txt&filename=ulysses.txt"
+curl -X POST "http://localhost:8000/rag/documents/ulysses/upload?source_url=https%3A%2F%2Fwww.gutenberg.org%2Fcache%2Fepub%2F4300%2Fpg4300.txt&filename=ulysses.txt&user_id=test-user-1"
 ```
 
 ---
@@ -177,8 +176,7 @@ curl -X POST \
 ### 2️⃣ Ask a Question (Streaming)
 
 ```bash
-curl -N \
-  "http://localhost:8000/rag/stream/ulysses?prompt=What%20is%20this%20book%20about%3F&session_id=s1"
+curl -N "http://localhost:8000/rag/stream/ulysses?prompt=Who%20is%20Leopold%20Bloom%3F&session_id=stream-test-1&user_id=test-user-1"
 ```
 
 ---
@@ -186,8 +184,7 @@ curl -N \
 ### 3️⃣ Conversation History
 
 ```bash
-curl -N \
-  "http://localhost:8000/rag/stream/ulysses?prompt=Explain%20that%20in%20more%20detail&session_id=s1"
+curl -N "http://localhost:8000/rag/stream/ulysses?prompt=Why%did%you%think%that&session_id=stream-test-1&user_id=test-user-1"
 ```
 
 ---
@@ -195,8 +192,7 @@ curl -N \
 ### 4️⃣ Delete a Document
 
 ```bash
-curl -X DELETE \
-  "http://localhost:8000/rag/documents/ulysses/delete"
+curl -X DELETE "http://localhost:8000/rag/documents/ulysses/delete?user_id=test-user-1"
 ```
 
 ---
