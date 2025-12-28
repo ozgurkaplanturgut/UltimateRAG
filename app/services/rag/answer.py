@@ -10,34 +10,70 @@ settings = get_settings()
 
 
 def build_answer_prompt(question: str, contexts: List[str], conversation: str) -> str:
-    """Build a balanced, grounded prompt for better RAG performance."""
-    ctx = "\n\n---\n\n".join([c for c in contexts if c]).strip()
+    """
+    Single universal prompt that works for BOTH:
+    - FOLLOWUP (answerable from conversation)
+    - RETRIEVE (answerable from doc context)
+    It enforces groundedness and avoids the "Evidence must be from CONTEXT" deadlock.
+    """
+    ctx = "\n\n---\n\n".join([c for c in (contexts or []) if c]).strip()
     conv = (conversation or "").strip()
 
     return f"""
-You are an expert assistant that provides helpful and accurate answers based ONLY on the provided context and conversation history.
+You are a grounded assistant. You MUST answer using ONLY the sources provided below:
+- CONVERSATION HISTORY
+- DOCUMENT CONTEXT
 
-### INSTRUCTIONS:
-1. **Groundedness:** Your answer must be derived directly from the CONTEXT or CONVERSATION. Do not use any internal knowledge or make up facts.
-2. **Handling Missing Information:** 
-   - If the information is not present in the sources, state: "I'm sorry, but the provided documents do not contain enough information to answer this question."
-   - Do not attempt to guess or use outside information.
-3. **Synthesis:** Combine information from different parts of the context to provide a comprehensive answer.
-4. **Tone:** Be professional, direct, and concise.
+You must follow this exact decision procedure:
 
-### OUTPUT FORMAT:
-- **Answer:** <Your structured answer here>
-- **Evidence:** Provide 1-3 distinct, verbatim quotes from the CONTEXT that directly support your answer. Use the format: "..."
+STEP 1 — Decide the best source:
+A) If the user question is about the assistant's prior message(s) (e.g., "why did you think that", "explain", "clarify", "what do you mean", "expand on that", "justify"), then prefer CONVERSATION HISTORY.
+B) Otherwise, prefer DOCUMENT CONTEXT.
+C) If the preferred source is insufficient, fall back to the other source.
+D) If BOTH are insufficient, output the insufficient message.
 
-### DATA:
+STEP 2 — Compose the answer:
+- Use ONLY the chosen source(s) (conversation and/or document).
+- Do NOT use any outside knowledge.
+- If you answer using conversation, you may refer to what was previously said (e.g., "In the previous answer, I said ...").
+
+STEP 3 — Evidence (mandatory if you provide a non-insufficient answer):
+- Provide 1–3 DISTINCT verbatim quotes copied EXACTLY from the SAME source(s) you used.
+- If you used conversation: quotes must come from CONVERSATION HISTORY.
+- If you used document context: quotes must come from DOCUMENT CONTEXT.
+- If you used both: you may mix, but every quote must clearly exist verbatim in one of the sources.
+
+Hard rules:
+- Never invent quotes.
+- Never provide "Evidence" that is paraphrased.
+- If you cannot find any verbatim quote in either source that supports your answer, then you MUST output the insufficient message instead.
+
+INSUFFICIENT MESSAGE (must match exactly):
+"I'm sorry, but the provided documents do not contain enough information to answer this question."
+
+Output format (exact):
+Answer: <your answer OR the insufficient message>
+Evidence:
+1) "<quote 1>"
+2) "<quote 2>"
+3) "<quote 3>"
+
+If insufficient, output:
+Answer: I'm sorry, but the provided documents do not contain enough information to answer this question.
+Evidence: [none]
+
+SOURCES START
+
 CONVERSATION HISTORY:
 {conv if conv else "[No prior conversation]"}
 
-DOKÜMAN CONTEXT:
+DOCUMENT CONTEXT:
 {ctx if ctx else "[No document context available]"}
 
 USER QUESTION:
 {question}
+
+SOURCES END
 """.strip()
 
 
