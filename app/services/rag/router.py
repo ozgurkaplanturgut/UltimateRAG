@@ -21,33 +21,58 @@ class RagRouteDecision(BaseModel):
 
 ROUTER_SYSTEM = """You are a routing classifier for a Retrieval-Augmented Generation (RAG) system.
 
-Task:
-Decide whether the user's message needs document retrieval (RETRIEVE) or can be answered using only the immediate conversation history (FOLLOWUP).
+Goal:
+Choose whether the user's message should be handled as:
+- FOLLOWUP: answer using ONLY the ongoing conversation / the assistant's previous message(s), without retrieving from the document
+- RETRIEVE: run document retrieval because the user likely needs new information grounded in the document
 
-You must be conservative:
-- Choose FOLLOWUP only when you are highly confident that the conversation alone is sufficient.
-- If unsure, choose RETRIEVE.
+Key idea:
+- Prefer FOLLOWUP for meta-questions about the conversation or the assistant's previous answer.
+- Use RETRIEVE only when the user asks for new document-grounded facts, specific details, or evidence.
 
 Definitions:
-- FOLLOWUP:
-  The user asks about the assistant's previous answer or the conversation itself (explain, clarify, justify, restate),
-  WITHOUT asking for new information from the document.
 
-- RETRIEVE:
-  The user asks for new facts/details from the document, a new question about the document, changes topic,
-  requests specific evidence/quotes/where-it-is-written, or asks anything that likely requires looking at the document again.
+FOLLOWUP (no retrieval):
+Choose FOLLOWUP when the user is asking to:
+- explain, clarify, justify, restate, or expand the assistant's previous answer
+- ask "why did you say/think that", "what do you mean", "how did you get that", "can you elaborate"
+- request reformatting of the previous answer (shorter/longer/bullets/translate)
+- ask for the reasoning behind the assistant's answer WITHOUT asking for quotes/citations/passages
+- ask about the conversation state (session, previous messages, what you said earlier)
 
-Special rule for evidence/quotes:
-- If the user asks for citations, quotes, passages, "where does it say", proof, or source from the document, choose RETRIEVE.
+Typical FOLLOWUP examples:
+- "Why did you think that?"
+- "Why did you say that?"
+- "What do you mean by that?"
+- "Can you explain more?"
+- "Summarize your answer in 2 sentences."
+- "Translate that to Turkish."
+
+RETRIEVE (needs document search):
+Choose RETRIEVE when the user:
+- asks a new question about the document/story/content
+- asks for specific facts, names, events, definitions from the document
+- asks for quotes, passages, citations, evidence, or “where does it say”
+- asks for chapter/section/page/line location or verbatim text
+- asks anything that must be grounded in the document beyond what was already stated in the conversation
+
+Special rule (hard override to RETRIEVE):
+If the user asks for any of the following, ALWAYS choose RETRIEVE:
+- quotes / passage / excerpt / exact wording
+- citations / evidence / proof / "where does it say"
+- chapter/section/page/line references
+
+Disambiguation rule:
+If the message is ambiguous but looks like a meta-question about the assistant's previous answer (e.g., "why", "how do you know", "explain that"),
+choose FOLLOWUP. If the user explicitly requests evidence/quotes/location in the text, choose RETRIEVE.
 
 Output format:
 Return ONLY valid JSON (no markdown, no extra text) with keys:
 - "route": "FOLLOWUP" or "RETRIEVE"
 - "confidence": a float between 0 and 1
 - "reason": a short string explaining the decision
-
-Remember: If not highly confident that FOLLOWUP is sufficient, choose RETRIEVE.
 """
+
 
 
 async def route_rag_query(
