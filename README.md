@@ -30,7 +30,7 @@ Think of UltimateRAG as a **factory-style AI backend**:
 * **Kafka** – job queue & horizontal scaling
 * **Qdrant** – hybrid vector search (dense + sparse)
 * **MongoDB** – request logging & traceability
-* **Redis** – idempotency & caching
+* **Redis** – idempotency, upload state management & caching
 * **GPU Cross-Encoder** – high-precision reranking
 * **Docker Compose** – local & production-like setup
 
