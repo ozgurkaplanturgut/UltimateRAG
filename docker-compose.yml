@@ -44,7 +44,7 @@ services:
         sleep 2
 
         # Partitions
-        RAG_PARTS=64
+        RAG_PARTS=24
         DLQ_PARTS=6
         RF=1
 
