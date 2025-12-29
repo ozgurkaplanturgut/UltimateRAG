@@ -114,7 +114,7 @@ async def rag_stream(
     if producer is None or dispatcher is None:
         raise HTTPException(status_code=500, detail="Kafka/dispatcher not ready")
 
-    # 🔐 REDIS STATE GATE
+    # REDIS STATE GATE
     state = await get_doc_state(user_id, doc_id)
     if state in (DocState.UPLOADING.value, DocState.DELETING.value):
         raise HTTPException(

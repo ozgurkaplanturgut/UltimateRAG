@@ -159,7 +159,6 @@ async def handle_upload(req: RagRequest, qdrant, producer: AIOKafkaProducer, cli
         raise
 
 
-
 async def handle_delete(req: RagRequest, qdrant, producer: AIOKafkaProducer) -> None:
     """Delete pipeline"""
     await set_doc_state(req.user_id, req.doc_id, DocState.DELETING)
