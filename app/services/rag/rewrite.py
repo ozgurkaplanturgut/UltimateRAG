@@ -110,7 +110,7 @@ def build_rewrite_prompt(
             You are rewriting a user question for better retrieval in a RAG system.
 
             Return ONLY valid JSON (no markdown, no extra text) with this exact schema:
-            {{"queries": ["...", "...", "..."]}}
+            {{"queries": ["...", "..."]}}
 
             Rules:
             - "queries" MUST contain exactly 2 strings.
