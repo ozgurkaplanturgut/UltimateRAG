@@ -22,8 +22,15 @@ from app.infrastructure.mongodb.rag_repository import (
     mark_request_processing,
     mark_request_success,
 )
-from app.infrastructure.qdrant.client import delete_doc_points, ensure_collection, get_qdrant, doc_meta_point_id
+
 from app.infrastructure.redis.client import get_redis
+from app.infrastructure.redis.doc_state import (
+    set_doc_state,
+    clear_doc_state,
+    DocState,
+)
+
+from app.infrastructure.qdrant.client import delete_doc_points, ensure_collection, get_qdrant, doc_meta_point_id
 from app.services.document.service import build_chunks, download_text, upsert_chunks, upsert_doc_meta
 from app.services.rag.schemas import RagRequest, RagResponseEvent
 from app.services.rag.service import process_query, send_end, send_event, send_error_and_mark
@@ -108,39 +115,70 @@ async def idempotency_release_on_fail(request_id: str) -> None:
 
 
 async def handle_upload(req: RagRequest, qdrant, producer: AIOKafkaProducer, client: AsyncOpenAI) -> None:
-    """Upload pipeline (preserves original steps)."""
-    await asyncio.to_thread(ensure_collection, qdrant)
-    await asyncio.to_thread(delete_doc_points, qdrant, req.user_id, req.doc_id)
+    """Upload pipeline"""
+    await set_doc_state(req.user_id, req.doc_id, DocState.UPLOADING)
 
-    if not req.source_url:
-        raise RuntimeError("source_url missing")
+    try:
+        await asyncio.to_thread(ensure_collection, qdrant)
+        await asyncio.to_thread(delete_doc_points, qdrant, req.user_id, req.doc_id)
 
-    text = await download_text(req.source_url)
-    chunks = await build_chunks(text)
+        if not req.source_url:
+            raise RuntimeError("source_url missing")
 
-    meta_id = doc_meta_point_id(req.user_id or "", req.doc_id)
-    await upsert_doc_meta(
-        qdrant,
-        user_id=req.user_id,
-        doc_id=req.doc_id,
-        meta_id=meta_id,
-        client=client,
-        text=text,
-    )
+        text = await download_text(req.source_url)
+        chunks = await build_chunks(text)
 
-    count = await upsert_chunks(qdrant, user_id=req.user_id, doc_id=req.doc_id, chunks=chunks, client=client)
+        meta_id = doc_meta_point_id(req.user_id or "", req.doc_id)
+        await upsert_doc_meta(
+            qdrant,
+            user_id=req.user_id,
+            doc_id=req.doc_id,
+            meta_id=meta_id,
+            client=client,
+            text=text,
+        )
 
-    await send_event(producer, RagResponseEvent(request_id=req.request_id, event_type="chunk", content="uploaded"))
-    await mark_request_success(req.request_id, extra={"chunks": count})
+        count = await upsert_chunks(
+            qdrant,
+            user_id=req.user_id,
+            doc_id=req.doc_id,
+            chunks=chunks,
+            client=client,
+        )
+
+        await set_doc_state(req.user_id, req.doc_id, DocState.READY)
+        await send_event(producer, RagResponseEvent(
+            request_id=req.request_id,
+            event_type="chunk",
+            content="uploaded",
+        ))
+        await mark_request_success(req.request_id, extra={"chunks": count})
+
+    except Exception:
+        await clear_doc_state(req.user_id, req.doc_id)
+        raise
+
 
 
 async def handle_delete(req: RagRequest, qdrant, producer: AIOKafkaProducer) -> None:
-    """Delete pipeline (preserves original steps)."""
-    await asyncio.to_thread(ensure_collection, qdrant)
-    await asyncio.to_thread(delete_doc_points, qdrant, req.user_id, req.doc_id)
+    """Delete pipeline"""
+    await set_doc_state(req.user_id, req.doc_id, DocState.DELETING)
 
-    await send_event(producer, RagResponseEvent(request_id=req.request_id, event_type="chunk", content="deleted"))
-    await mark_request_success(req.request_id)
+    try:
+        await asyncio.to_thread(ensure_collection, qdrant)
+        await asyncio.to_thread(delete_doc_points, qdrant, req.user_id, req.doc_id)
+
+        await send_event(
+            producer,
+            RagResponseEvent(
+                request_id=req.request_id,
+                event_type="chunk",
+                content="deleted",
+            ),
+        )
+        await mark_request_success(req.request_id)
+    finally:
+        await clear_doc_state(req.user_id, req.doc_id)
 
 
 async def process_rag_request(

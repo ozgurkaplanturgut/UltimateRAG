@@ -15,6 +15,7 @@ from fastapi.responses import StreamingResponse
 from app.core.config import get_settings
 from app.infrastructure.kafka.dispatcher import ResponseDispatcher
 from app.infrastructure.mongodb.rag_repository import create_rag_request_log
+from app.infrastructure.redis.doc_state import get_doc_state, DocState
 from app.services.rag.schemas import RagRequest
 
 logger = logging.getLogger(__name__)
@@ -24,7 +25,7 @@ router = APIRouter(prefix="/rag", tags=["rag"])
 
 
 def _sse(data: dict) -> str:
-    """Convert a dict to SSE format string."""
+    """Format data as Server-Sent Event (SSE)."""
     return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
@@ -36,8 +37,7 @@ def _sse_ping() -> str:
 async def upload_document(
     request: Request,
     doc_id: str,
-    source_url: str = Query(...,
-                            description="Document URL to download in worker"),
+    source_url: str = Query(...),
     filename: Optional[str] = Query(default=None),
     user_id: Optional[str] = Query(default=None),
 ) -> dict:
@@ -64,6 +64,7 @@ async def upload_document(
         key=request_id,
         value=job.model_dump(mode="json"),
     )
+
     return {"request_id": request_id, "status": "queued"}
 
 
@@ -73,7 +74,7 @@ async def delete_document(
     doc_id: str,
     user_id: Optional[str] = Query(default=None),
 ) -> dict:
-    """Endpoint to delete a document from RAG system."""
+    """Endpoint to delete a document for RAG processing."""
     producer: AIOKafkaProducer = getattr(request.app.state, "producer", None)
     if producer is None:
         raise HTTPException(status_code=500, detail="Kafka producer not ready")
@@ -94,6 +95,7 @@ async def delete_document(
         key=request_id,
         value=job.model_dump(mode="json"),
     )
+
     return {"request_id": request_id, "status": "queued"}
 
 
@@ -105,17 +107,22 @@ async def rag_stream(
     session_id: str = Query(...),
     user_id: Optional[str] = Query(default=None),
 ) -> StreamingResponse:
-    """Endpoint to handle RAG query streaming via SSE."""
+    """Endpoint to handle RAG query streaming via Server-Sent Events (SSE)."""
     producer: AIOKafkaProducer = getattr(request.app.state, "producer", None)
-    dispatcher: ResponseDispatcher = getattr(
-        request.app.state, "dispatcher", None)
+    dispatcher: ResponseDispatcher = getattr(request.app.state, "dispatcher", None)
+
     if producer is None or dispatcher is None:
+        raise HTTPException(status_code=500, detail="Kafka/dispatcher not ready")
+
+    # 🔐 REDIS STATE GATE
+    state = await get_doc_state(user_id, doc_id)
+    if state in (DocState.UPLOADING.value, DocState.DELETING.value):
         raise HTTPException(
-            status_code=500, detail="Kafka/dispatcher not ready")
+            status_code=409,
+            detail=f"Document is currently {state.lower()}, please try again later.",
+        )
 
     request_id = str(uuid.uuid4())
-
-    # Race fix preserved: open queue first, then publish job
     q = await dispatcher.open_stream(request_id)
 
     job = RagRequest(
@@ -156,8 +163,6 @@ async def rag_stream(
 
             while True:
                 if await request.is_disconnected():
-                    logger.info(
-                        "Client disconnected request_id=%s", request_id)
                     break
 
                 now = time.monotonic()
@@ -166,7 +171,7 @@ async def rag_stream(
                         {
                             "request_id": request_id,
                             "event_type": "error",
-                            "content": f"stream_total_timeout_after_{max_total_s}s",
+                            "content": "stream_timeout",
                             "created_at": datetime.utcnow().isoformat(),
                         }
                     )
@@ -201,7 +206,6 @@ async def rag_stream(
                             }
                         )
                         break
-
                     yield _sse_ping()
                     continue
 
