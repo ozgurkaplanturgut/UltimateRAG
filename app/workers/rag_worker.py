@@ -234,9 +234,12 @@ async def worker_main() -> None:
         timeout=Timeout(
             connect=10.0, read=settings.stream_hard_timeout, write=10.0, pool=10.0),
     )
-
-    cross = CrossEncoder(settings.rag_cross_encoder_model,
-                         device=settings.rag_cross_encoder_device)
+    try:
+        cross = CrossEncoder(settings.rag_cross_encoder_model,
+                            device=settings.rag_cross_encoder_device)
+    except Exception as e:
+        logger.error("Failed to load CrossEncoder model: %s", e)
+        cross = CrossEncoder(settings.rag_cross_encoder_model, device="cpu")
 
     consumer = AIOKafkaConsumer(
         settings.rag_request_topic,
