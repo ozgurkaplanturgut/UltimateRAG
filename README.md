@@ -1,3 +1,4 @@
+```markdown
 # 🚀 UltimateRAG
 
 **Scalable Streaming RAG System (Kafka + SSE + Qdrant)**
@@ -6,10 +7,10 @@ UltimateRAG is a **production-oriented Retrieval-Augmented Generation (RAG) play
 
 It focuses on:
 
-* large documents
-* high concurrency
-* real-time streaming responses
-* clean separation between API and heavy AI workloads
+- large documents  
+- high concurrency  
+- real-time streaming responses  
+- clean separation between API and heavy AI workloads  
 
 This is **not a demo** or a notebook-based prototype.
 
@@ -19,43 +20,45 @@ This is **not a demo** or a notebook-based prototype.
 
 Think of UltimateRAG as a **factory-style AI backend**:
 
-* The **API never blocks**
-* All heavy work happens in **background workers**
-* Kafka distributes load
-* Answers stream **token-by-token** to the client
+- The **API never blocks**
+- All heavy work happens in **background workers**
+- Kafka distributes load
+- Answers stream **token-by-token** to the client
 
 ### Core Components
 
-* **FastAPI** – HTTP + SSE streaming
-* **Kafka** – job queue & horizontal scaling
-* **Qdrant** – hybrid vector search (dense + sparse)
-* **MongoDB** – request logging & traceability
-* **Redis** – idempotency, upload state management & caching
-* **GPU Cross-Encoder** – high-precision reranking
-* **Docker Compose** – local & production-like setup
+- **FastAPI** – HTTP + SSE streaming  
+- **Kafka** – job queue & horizontal scaling  
+- **Qdrant** – hybrid vector search (dense + sparse)  
+- **MongoDB** – request logging & traceability  
+- **Redis** – idempotency, upload state management & caching  
+- **GPU Cross-Encoder** – high-precision reranking  
+- **Docker Compose** – local & production-like setup  
 
 ---
 
 ## 🏗 High-Level Architecture
 
 ```
+
 Client
-  ↓ HTTP / SSE
+↓ HTTP / SSE
 API (FastAPI)
-  ↓ Kafka
+↓ Kafka
 Kafka (rag_requests)
-  ↓
+↓
 RAG Workers (N instances)
-  ├─ Qdrant (vector search)
-  ├─ LLM (generation)
-  └─ Cross-Encoder (reranking, GPU)
-  ↓
+├─ Qdrant (vector search)
+├─ LLM (generation)
+└─ Cross-Encoder (reranking, GPU)
+↓
 Kafka (rag_responses)
-  ↓
+↓
 API Dispatcher
-  ↓
+↓
 Client (streaming answer)
-```
+
+````
 
 ---
 
@@ -64,19 +67,17 @@ Client (streaming answer)
 Uploading a document triggers a **full RAG ingestion pipeline**.
 
 1. **API**
-
-   * validates request
-   * logs metadata
-   * sends upload job to Kafka
-   * returns immediately (`queued`)
+   - validates request
+   - logs metadata
+   - sends upload job to Kafka
+   - returns immediately (`queued`)
 
 2. **Worker**
-
-   * downloads the document
-   * builds a **document profile** (topic, intent, style)
-   * splits text into overlapping chunks
-   * creates **dense + sparse embeddings**
-   * stores vectors in Qdrant
+   - downloads the document
+   - builds a **document profile** (topic, intent, style)
+   - splits text into overlapping chunks
+   - creates **dense + sparse embeddings**
+   - stores vectors in Qdrant
 
 After this, the document is **fully queryable**.
 
@@ -87,50 +88,46 @@ After this, the document is **fully queryable**.
 Each query runs through multiple quality-improving stages:
 
 1. **Query rewrite**
-
-   * uses conversation history (optional)
-   * converts vague questions into retrieval-friendly queries
+   - uses conversation history (optional)
+   - converts vague questions into retrieval-friendly queries
 
 2. **Retrieval**
-
-   * hybrid dense + sparse search
-   * high recall (`RAG_TOP_K`)
+   - hybrid dense + sparse search
+   - high recall (`RAG_TOP_K`)
 
 3. **Reranking**
-
-   * GPU cross-encoder
-   * removes irrelevant chunks
-   * keeps only the best context
+   - GPU cross-encoder
+   - removes irrelevant chunks
+   - keeps only the best context
 
 4. **Answer generation**
-
-   * LLM generates tokens
-   * streamed in real time via SSE
+   - LLM generates tokens
+   - streamed in real time via SSE
 
 If context is insufficient:
 
-* the system retries once
-* then safely returns `insufficient context`
+- the system retries once  
+- then safely returns `insufficient context`
 
 ---
 
 ## 🧠 Why This Design Works
 
-| Problem          | Traditional    | UltimateRAG             |
-| ---------------- | -------------- | ----------------------- |
-| Long LLM latency | API blocks     | Kafka decoupling        |
-| High concurrency | Thread limits  | Partition-based scaling |
-| Streaming        | Hard to manage | SSE + dispatcher        |
-| Large documents  | Memory-heavy   | Chunked ingestion       |
-| Scaling          | Vertical only  | Horizontal workers      |
+| Problem            | Traditional        | UltimateRAG              |
+|--------------------|--------------------|--------------------------|
+| Long LLM latency   | API blocks         | Kafka decoupling         |
+| High concurrency   | Thread limits      | Partition-based scaling  |
+| Streaming          | Hard to manage     | SSE + dispatcher         |
+| Large documents    | Memory-heavy       | Chunked ingestion        |
+| Scaling            | Vertical only      | Horizontal workers       |
 
 ---
 
 ## ⚙️ Requirements
 
-* Docker & Docker Compose
-* NVIDIA GPU + **nvidia-container-toolkit** (for fast reranking)
-* OpenAI API key
+- Docker & Docker Compose  
+- NVIDIA GPU + **nvidia-container-toolkit** (for fast reranking)  
+- OpenAI API key  
 
 > Without GPU, the system still works but reranking runs on CPU (much slower).
 
@@ -142,7 +139,7 @@ If context is insufficient:
 OPENAI_API_KEY=your_key_here
 APP_ENV=dev
 LOG_LEVEL=INFO
-```
+````
 
 ---
 
@@ -184,7 +181,7 @@ curl -N "http://localhost:8000/rag/stream/ulysses?prompt=Who%20is%20Leopold%20Bl
 ### 3️⃣ Conversation History
 
 ```bash
-curl -N "http://localhost:8000/rag/stream/ulysses?prompt=Why%did%you%think%that&session_id=stream-test-1&user_id=test-user-1"
+curl -N "http://localhost:8000/rag/stream/ulysses?prompt=Why%20did%20you%20think%20that&session_id=stream-test-1&user_id=test-user-1"
 ```
 
 ---
@@ -234,14 +231,60 @@ Not included by design:
 ➡️ **Do not expose directly to the public internet.**
 Use an API gateway + auth layer in real deployments.
 
-### Project-Specific Tuning
+---
 
-For best results:
+### Consider Utilization (Recommended Production Pattern)
 
-* tune chunk size & overlap
-* adjust top-k & rerank parameters
-* scale workers based on GPU/CPU
-* choose domain-specific models
+In production, the **most robust and scalable pattern** is to **terminate SSE connections in the backend only**, while treating the AI/RAG layer as a **pure utility worker system**.
+
+**Recommended flow:**
+
+* UI opens **SSE connection only to the backend**
+* Backend:
+
+  * accepts client request
+  * publishes job to Kafka
+  * keeps SSE channel open
+* AI/RAG workers:
+
+  * consume jobs from Kafka
+  * perform retrieval, reranking, and generation
+  * publish incremental results back to Kafka
+* Backend:
+
+  * consumes AI responses
+  * forwards tokens/events to the client over SSE
+
+**Why this matters:**
+
+* **AI services never manage network connections**
+  * no SSE state
+  * no client lifecycle awareness
+
+* **Workers stay stateless and horizontally scalable**
+
+* **Backpressure is centralized**
+  * slow clients do not affect GPU workers
+
+* **GPU utilization stays high**
+  * workers focus purely on compute
+
+* **Failure isolation**
+  * SSE disconnects do not kill generation
+  * workers can retry or resume independently
+
+This separation ensures:
+
+* predictable GPU/CPU utilization
+* easier autoscaling
+* simpler observability
+* safer production deployments
+
+> **Backend owns connectivity.
+> Kafka owns flow control.
+> AI workers own computation.**
+
+This architecture is strongly recommended for **high-concurrency, streaming, GPU-backed RAG systems**.
 
 ---
 
