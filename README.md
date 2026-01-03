@@ -43,24 +43,24 @@ The system decouples the **Client-facing API** from the **GPU-heavy Workers** us
 ```mermaid
 graph TD
     %% Nodes
-    Client([👤 Client / UI])
+    Client([Client / UI])
     
     subgraph "Gateway Layer"
-        API[🚀 FastAPI API<br/>(HTTP + SSE)]
+        API[FastAPI API<br/>(HTTP + SSE)]
         Redis[(Redis<br/>Cache/State)]
         Mongo[(MongoDB<br/>Logs)]
     end
 
     subgraph "Event Bus (Kafka)"
-        KafkaReq[📨 Topic: rag_requests]
-        KafkaRes[📨 Topic: rag_responses]
+        KafkaReq[Topic: rag_requests]
+        KafkaRes[Topic: rag_responses]
     end
 
     subgraph "Heavy Compute Layer"
-        Worker[⚙️ RAG Worker<br/>(Scalable N instances)]
+        Worker[RAG Worker<br/>(Scalable N instances)]
         Qdrant[(Qdrant<br/>Vector DB)]
-        CrossEnc[🧠 GPU Cross-Encoder<br/>(Reranking)]
-        LLM[🤖 LLM Service<br/>(Generation)]
+        CrossEnc[GPU Cross-Encoder<br/>(Reranking)]
+        LLM[LLM Service<br/>(Generation)]
     end
 
     %% Flow
